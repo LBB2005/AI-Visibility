@@ -104,7 +104,8 @@ export async function chat(req: ChatRequest, opts: { cacheSalt?: string; noCache
   const key = useCache ? cacheKey(req, opts.cacheSalt ?? "") : "";
   if (useCache) {
     const hit = cacheGet(key);
-    if (hit) return { ...hit, cached: true, latencyMs: 0 };
+    // A cache hit isn't billed: cost is what this call actually spent.
+    if (hit) return { ...hit, cost: 0, cached: true, latencyMs: 0 };
   }
 
   let lastErr: OpenRouterError | null = null;

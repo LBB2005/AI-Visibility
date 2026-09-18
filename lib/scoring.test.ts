@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type AnswerInput,
   verdict,
+  trackInsight,
   computeReport,
   containsTerm,
   fallbackOccurrences,
@@ -273,6 +274,10 @@ describe("computeReport", () => {
       ["Notion", 1],
     ]);
     expect(verdict(r, "Notion")).toContain("#2 of 2");
+    // never fold a product into a bare company name across answers
+    const r2 = computeReport([row("Apple Notes", ["Apple Notes"]), row("Apple", ["Apple"], { sample: 2 })], notion);
+    expect(r2.leaderboard.map((e) => e.name)).toContain("Apple Notes");
     expect(verdict(rep, "Notion")).toContain("tied for #1");
+    expect(trackInsight(rep, "Notion")).toContain("rises from 50% to 100%");
   });
 });

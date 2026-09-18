@@ -1,26 +1,364 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Tokens. Yellow (--hl) is reserved for the target brand, everywhere.
+   --------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --paper: #eef1f5;
+  --surface: #f7f9fb;
+  --ink: #16223a;
+  --ink-2: #44506a;
+  --ink-3: #69738b;
+  --rule: #d3d9e2;
+  --rule-strong: #b6bfcc;
+  --hl: #f5d547;
+  --hl-ink: #16223a;
+  --bar: #8a96ad;
+  --heat-max: #16223a;
+  --heat-min: #e3e8ef;
+  --danger: #a23b2a;
+  --focus: #2d5bd7;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --paper: #0e1526;
+    --surface: #141d31;
+    --ink: #e4e9f2;
+    --ink-2: #aab4c7;
+    --ink-3: #7d889e;
+    --rule: #243049;
+    --rule-strong: #34425f;
+    --bar: #6d7a95;
+    --heat-max: #c7d5ef;
+    --heat-min: #1a2439;
+    --danger: #f08a78;
+    --focus: #8fb0ff;
+    color-scheme: dark;
   }
 }
 
+:root[data-theme="dark"] {
+  --paper: #0e1526;
+  --surface: #141d31;
+  --ink: #e4e9f2;
+  --ink-2: #aab4c7;
+  --ink-3: #7d889e;
+  --rule: #243049;
+  --rule-strong: #34425f;
+  --bar: #6d7a95;
+  --heat-max: #c7d5ef;
+  --heat-min: #1a2439;
+  --danger: #f08a78;
+  --focus: #8fb0ff;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-hl: var(--hl);
+  --color-danger: var(--danger);
+  --font-serif: var(--font-instrument), "Iowan Old Style", Georgia, serif;
+  --font-sans: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+html {
+  background: var(--paper);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--hl);
+  color: var(--hl-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+@layer components {
+/* ---------------------------------------------------------------------------
+   The highlighter: irregular stroke, solid fill, clones across line breaks.
+   --------------------------------------------------------------------------- */
+.hl {
+  background: var(--hl);
+  color: var(--hl-ink);
+  padding: 0.02em 0.16em;
+  margin: 0 -0.04em;
+  border-radius: 0.7em 0.25em 0.8em 0.3em / 0.35em 0.8em 0.3em 0.7em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.hl-swipe {
+  animation: swipe 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  background-size: 100% 100%;
+}
+@keyframes swipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Type
+   --------------------------------------------------------------------------- */
+.display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.08;
+}
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.label {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.section-title {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  line-height: 1.1;
+}
+.section-kicker {
+  font-size: 13px;
+  color: var(--ink-3);
+  max-width: 62ch;
+}
+
+/* ---------------------------------------------------------------------------
+   Hero sentence with inline blanks
+   --------------------------------------------------------------------------- */
+.blank {
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--ink);
+  padding: 0 0.1em;
+  min-width: 4ch;
+  field-sizing: content;
+  outline: none;
+  border-radius: 0;
+}
+.blank::placeholder {
+  color: var(--ink-3);
+  opacity: 0.55;
+}
+.blank:focus {
+  border-bottom-color: var(--focus);
+}
+.blank.is-brand:not(:placeholder-shown) {
+  background: var(--hl);
+  color: var(--hl-ink);
+  border-bottom-color: transparent;
+  border-radius: 0.5em 0.2em 0.6em 0.25em / 0.3em 0.6em 0.25em 0.5em;
+  padding: 0 0.2em;
+}
+
+/* ---------------------------------------------------------------------------
+   Controls
+   --------------------------------------------------------------------------- */
+.field {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.field:focus {
+  border-color: var(--focus);
+  outline: none;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-weight: 500;
+  font-size: 14px;
+  border: 1px solid var(--ink);
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+  cursor: pointer;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--ink) 88%, var(--paper));
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+.link {
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+.link:hover {
+  text-decoration-color: var(--ink);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.chip-target {
+  background: var(--hl);
+  color: var(--hl-ink);
+  border-color: transparent;
+}
+
+.rule-top {
+  border-top: 1px solid var(--rule);
+}
+.rule-bottom {
+  border-bottom: 1px solid var(--rule);
+}
+
+/* Progress line */
+.progress-track {
+  height: 4px;
+  background: var(--rule);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--ink);
+  border-radius: 999px;
+  transition: width 400ms ease;
+}
+.progress-fail {
+  height: 100%;
+  background: var(--danger);
+}
+
+/* Heat cells */
+.cell {
+  position: relative;
+  border-radius: 6px;
+  padding: 12px 14px;
+  min-height: 76px;
+  transition: outline-color 120ms;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+.cell:hover,
+.cell:focus-visible {
+  outline-color: var(--ink);
+}
+.cell-na {
+  border: 1px dashed var(--rule-strong);
+  color: var(--ink-3);
+}
+.tip {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  min-width: 220px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+  text-align: left;
+}
+.has-tip:hover .tip,
+.has-tip:focus-visible .tip {
+  opacity: 1;
+}
+
+/* Answer text */
+.answer {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.answer.clamped {
+  max-height: 13.5em;
+  overflow: hidden;
+  border-bottom: 1px dashed var(--rule-strong);
+}
+
+/* Page-load reveal */
+.reveal {
+  animation: reveal 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .hl-swipe {
+    animation: none;
+  }
+}
+
 }

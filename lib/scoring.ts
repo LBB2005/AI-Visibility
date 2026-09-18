@@ -231,9 +231,10 @@ export function canonicalize(name: string, target: Target, competitors: string[]
 }
 
 /**
- * Run-level name-variant map: a name that contains a shorter name extracted elsewhere in
- * the run is folded into it ("Microsoft OneNote" → "OneNote"). When several shorter
- * names qualify, the most frequently extracted wins (ties → the longer, more specific one).
+ * Run-level name-variant map: a company-prefixed name folds into the bare product name
+ * extracted elsewhere in the run ("Microsoft OneNote" → "OneNote"). Only trailing matches
+ * fold — a product never folds into a bare company name ("Apple Notes" stays, not "Apple").
+ * When several shorter names qualify, the most frequently extracted wins.
  */
 export function variantMap(rows: AnswerInput[], target: Target): Map<string, string> {
   const counts = new Map<string, { name: string; n: number }>();
@@ -254,7 +255,7 @@ export function variantMap(rows: AnswerInput[], target: Target): Map<string, str
   const map = new Map<string, string>();
   for (const [k, { name }] of all) {
     const candidates = all
-      .filter(([k2, c]) => k2 !== k && c.name.length < name.length && containsTerm(name, c.name))
+      .filter(([k2, c]) => k2 !== k && c.name.length < name.length && k.endsWith(" " + k2))
       .sort((a, b) => b[1].n - a[1].n || b[1].name.length - a[1].name.length);
     if (candidates.length) map.set(k, candidates[0][1].name);
   }
@@ -639,8 +640,11 @@ export function trackInsight(report: Report, brand: string): string | null {
   if (g.delta === null || !g.pairedModels.length) return null;
   const pts = Math.round(Math.abs(g.delta) * 100);
   const sig = g.pValue !== null && g.pValue < 0.05;
-  if (pts < 1) return `Web search makes no difference: ${brand} is named at the same rate from model memory and with live search.`;
+  const pa = g.parametric.avgPosition;
+  const wa = g.web.avgPosition;
+  const posShift = pa != null && wa != null && Math.abs(wa - pa) >= 0.5 ? ` When named, its average position moves from #${pa.toFixed(1)} from memory to #${wa.toFixed(1)} with web search.` : "";
+  if (pts < 1) return `Web search doesn't change how often ${brand} is named (${pct(g.web.rate)} either way).${posShift || " Its position is stable too."}`;
   const dir = g.delta > 0 ? "rises" : "falls";
   const where = g.delta > 0 ? "live web results surface it more than training data does" : "training data favors it more than current web results do";
-  return `With web search on, ${brand}'s mention rate ${dir} from ${pct(g.parametric.rate)} to ${pct(g.web.rate)} (${g.delta > 0 ? "+" : "−"}${pts} pts${sig ? "" : ", not statistically significant at this sample size"}) — ${where}.`;
+  return `With web search on, ${brand}'s mention rate ${dir} from ${pct(g.parametric.rate)} to ${pct(g.web.rate)} (${g.delta > 0 ? "+" : "−"}${pts} pts${sig ? "" : ", not statistically significant at this sample size"}): ${where}.${posShift}`;
 }

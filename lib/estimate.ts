@@ -15,7 +15,7 @@ export interface PricedModel {
 export const EST = {
   questionTokens: 40,
   answerTokens: 900, // visible answer + typical reasoning overhead
-  webContextTokens: 3000, // injected search results
+  webContextTokens: 25000, // injected search results (observed ~25k with native search)
   extractPromptTokens: 1400,
   extractCompletionTokens: 200,
   defaultWebSearchPrice: 0.01,

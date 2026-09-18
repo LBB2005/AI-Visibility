@@ -41,6 +41,8 @@ List every company, product, app, or service that the answer names, in order of 
 - One entry per distinct product/company, using the name exactly as written in the answer.
 - first_position is the 1-based order of first appearance (1 = named first).
 - Do not include generic categories ("note-taking app"), people, programming languages, or file formats.
+- Do not include operating systems, devices, or platforms mentioned only for compatibility ("works on Mac, Windows, iOS").
+- Do not list a company separately when it is only mentioned as the maker of a product you already listed (list "Apple Notes", not also "Apple").
 - Do not include websites/publications that only appear as cited sources or links.
 - If nothing is named, return {"brands": []}.
 
