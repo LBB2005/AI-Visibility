@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 import type { Question, RunModel } from "@/lib/db";
 import type { RowDTO } from "@/lib/report";
-import { pct, type SliceMetrics, type Target } from "@/lib/scoring";
+import { CATEGORY_LABELS, classifyDomain, registrableDomain } from "@/lib/citations";
+import { pct } from "@/lib/format";
+import type { Target } from "@/lib/match";
+import type { SliceMetrics } from "@/lib/scoring";
 import { HighlightedText } from "./Highlight";
 
 type Show = "all" | "named" | "missed" | "failed";
@@ -157,14 +160,12 @@ function AnswerBlock({ r, modelLabel, target }: { r: RowDTO; modelLabel: string;
         <div className="mt-3 text-xs text-ink-3">
           Sources:{" "}
           {r.citations.slice(0, 8).map((c, i) => {
-            let host = c.url;
-            try {
-              host = new URL(c.url).hostname.replace(/^www\./, "");
-            } catch {}
+            const host = registrableDomain(c.url) ?? c.url;
+            const category = classifyDomain(host, { targetNames: [target.brand, ...(target.aliases ?? [])] });
             return (
               <span key={c.url}>
                 {i > 0 && ", "}
-                <a className="link" href={c.url} target="_blank" rel="noreferrer noopener">
+                <a className={`link ${category === "owned" ? "hl" : ""}`} href={c.url} target="_blank" rel="noreferrer noopener" title={CATEGORY_LABELS[category]}>
                   {host}
                 </a>
               </span>

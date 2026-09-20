@@ -1,6 +1,6 @@
 import { db, getAnswers, getRun, type AnswerRow, type RunRow } from "./db";
 import { isActive } from "./pipeline";
-import { computeReport, trackInsight, verdict, type AnswerInput, type Report } from "./scoring";
+import { citationInsight, computeReport, trackInsight, verdict, type AnswerInput, type Report } from "./scoring";
 
 export interface RowDTO {
   id: number;
@@ -37,6 +37,7 @@ export interface RunPayload {
   report: Omit<Report, "scored">;
   verdict: string;
   trackInsight: string | null;
+  citationInsight: string | null;
   rows?: RowDTO[];
 }
 
@@ -49,6 +50,7 @@ const toInput = (a: AnswerRow): AnswerInput => ({
   status: a.status === "ok" ? "ok" : "failed",
   answer: a.answer,
   brands: a.brands,
+  citations: a.citations,
 });
 
 export function buildPayload(id: string, withRows: boolean): RunPayload | null {
@@ -63,7 +65,12 @@ export function buildPayload(id: string, withRows: boolean): RunPayload | null {
   const target = { brand: run.brand, aliases: run.aliases };
   // Pending rows are neither successes nor failures yet — score only finished rows.
   const finished = answers.filter((a) => a.status !== "pending");
-  const { scored, ...report } = computeReport(finished.map(toInput), target, run.competitors);
+  // Resampling is skipped while a run is still collecting — the progress poll runs every 2s.
+  const settled = run.status !== "running" && !isActive(id);
+  const { scored, ...report } = computeReport(finished.map(toInput), target, run.competitors, {
+    bootstrap: settled,
+    brandDomain: run.brand_domain,
+  });
 
   const progress: Progress = {
     total: answers.length,
@@ -80,6 +87,7 @@ export function buildPayload(id: string, withRows: boolean): RunPayload | null {
     report,
     verdict: verdict({ ...report, scored }, run.brand),
     trackInsight: trackInsight({ ...report, scored }, run.brand),
+    citationInsight: citationInsight({ ...report, scored }, run.brand),
   };
 
   if (withRows) {

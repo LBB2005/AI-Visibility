@@ -1,15 +1,29 @@
 /**
- * Pure scoring module: brand matching, ranking, and every metric shown in the UI.
- * No I/O, no model calls — everything here is deterministic and unit-tested.
+ * Scoring: per-answer brand ranking and every metric shown in the UI.
+ * Pure and deterministic — name matching lives in ./match, statistics in ./stats,
+ * and citation analysis in ./citations.
  */
+
+import { citationReport, type CitationReport } from "./citations";
+import { pct } from "./format";
+import {
+  brandKey,
+  containsTerm,
+  fallbackOccurrences,
+  fold,
+  hasUpper,
+  mentionsName,
+  nameMatchesTarget,
+  targetTerms,
+  termRegex,
+  type Target,
+} from "./match";
+import { bootstrapDiff, clusterBootstrap, positionWeight, twoProportionP, wilson, type BootstrapCI, type BootstrapDiff } from "./stats";
+
+export type { Target } from "./match";
 
 export type Track = "parametric" | "web";
 export const TRACKS: Track[] = ["parametric", "web"];
-
-export interface Target {
-  brand: string;
-  aliases?: string[];
-}
 
 export interface ExtractedBrand {
   name: string;
@@ -27,175 +41,8 @@ export interface AnswerInput {
   status: "ok" | "failed";
   answer: string | null;
   brands: ExtractedBrand[] | null;
-}
-
-// ---------------------------------------------------------------------------
-// Text folding & term matching
-// ---------------------------------------------------------------------------
-
-/**
- * Length-preserving fold: strips diacritics, straightens quotes/dashes, maps all
- * whitespace to a single space char (without collapsing), optionally lowercases.
- * Because length is preserved, offsets in the folded string are valid offsets
- * into the raw string — which is what the UI uses for highlighting.
- */
-export function fold(s: string, lower = true): string {
-  let out = "";
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    let c = ch.normalize("NFKD")[0] ?? ch;
-    if (/[‘’‛′`´]/.test(c)) c = "'";
-    else if (/[‐-―−]/.test(c)) c = "-";
-    else if (/\s/.test(c)) c = " ";
-    if (lower) {
-      const l = c.toLowerCase();
-      if (l.length === 1) c = l;
-    }
-    out += c.length === 1 ? c : ch;
-  }
-  return out;
-}
-
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-// Word boundary = not preceded/followed by a letter or digit (Unicode-aware).
-const B_START = "(?<![\\p{L}\\p{N}])";
-const B_END = "(?![\\p{L}\\p{N}])";
-
-/** Regex source for a term; spaces/hyphens inside the term match any run of spaces/hyphens. */
-function termSource(term: string, lower: boolean, sep = "[ \\-]+"): string {
-  const parts = fold(term.trim(), lower)
-    .split(/[ \-]+/)
-    .filter(Boolean)
-    .map(escapeRe);
-  return B_START + parts.join(sep) + B_END;
-}
-
-export function termRegex(term: string, opts: { lower?: boolean; global?: boolean; sep?: string } = {}): RegExp {
-  const lower = opts.lower ?? true;
-  return new RegExp(termSource(term, lower, opts.sep), "u" + (opts.global ? "g" : ""));
-}
-
-/** All user-supplied names for the target (brand + aliases), deduped, empties dropped. */
-export function targetTerms(target: Target): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const t of [target.brand, ...(target.aliases ?? [])]) {
-    const trimmed = t.trim();
-    const key = fold(trimmed);
-    if (trimmed && !seen.has(key)) {
-      seen.add(key);
-      out.push(trimmed);
-    }
-  }
-  return out;
-}
-
-/**
- * Does `text` contain `term` as a whole word/phrase, case-insensitively?
- * "Notion AI" contains "Notion" (true); "Notion" does not contain "Notion AI" (false);
- * "Dropbox" does not contain "Box" (false).
- */
-export function containsTerm(text: string, term: string): boolean {
-  if (!term.trim()) return false;
-  return termRegex(term).test(fold(text));
-}
-
-/**
- * Word-boundary mention of a proper name in free text, rejecting all-lowercase
- * occurrences of capitalized names ("small teams" is not "Microsoft Teams"/"Teams").
- */
-export function mentionsName(text: string, name: string): boolean {
-  if (!name.trim()) return false;
-  const folded = fold(text);
-  for (const m of folded.matchAll(termRegex(name, { global: true }))) {
-    if (!hasUpper(name) || hasUpper(text.slice(m.index!, m.index! + m[0].length))) return true;
-  }
-  return false;
-}
-
-/** Primary matcher: does an extracted brand name refer to the target? */
-export function nameMatchesTarget(name: string, target: Target): boolean {
-  return targetTerms(target).some((t) => containsTerm(name, t));
-}
-
-const alnumLen = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, "").length;
-const hasUpper = (s: string) => /\p{Lu}/u.test(s);
-const squash = (s: string) => fold(s).replace(/[^\p{L}\p{N}]/gu, "");
-
-/**
- * Strict leak check for generated questions — deliberately over-eager, because a
- * question that names the brand invalidates the measurement. A question leaks if:
- *  - it contains the brand/alias as a word or phrase, with any (or no) space/hyphen
- *    between its words ("Google Docs", "Google-Docs", "GoogleDocs"), any case; or
- *  - for names of 4+ letters, any single token contains it ("NotionHQ", "#notion").
- */
-export function leaksBrand(question: string, target: Target): string | null {
-  const folded = fold(question);
-  const tokens = folded.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  for (const term of targetTerms(target)) {
-    if (termRegex(term, { sep: "[ \\-]*" }).test(folded)) return term;
-    const sq = squash(term);
-    if (sq.length >= 4 && tokens.some((t) => t.includes(sq))) return term;
-  }
-  return null;
-}
-
-/**
- * Raw-text fallback matcher, used when extraction missed the brand.
- * Returns character offsets (into the raw answer) of each accepted occurrence.
- *
- * Rules, to avoid false positives on brands that are also common words:
- *  - word-boundary, case-insensitive match;
- *  - if the user typed the term with any uppercase letter, an occurrence written in
- *    all lowercase is rejected ("the notion that…", "bear in mind" are not brands);
- *  - terms with ≤ 2 letters/digits ("X", "Go") are too ambiguous — no fallback.
- */
-export function fallbackOccurrences(answer: string, target: Target): { start: number; end: number }[] {
-  const folded = fold(answer);
-  const spans: { start: number; end: number }[] = [];
-  for (const term of targetTerms(target)) {
-    if (alnumLen(term) <= 2) continue;
-    const re = termRegex(term, { global: true });
-    for (const m of folded.matchAll(re)) {
-      const start = m.index!;
-      const end = start + m[0].length;
-      const raw = answer.slice(start, end);
-      if (hasUpper(term) && !hasUpper(raw)) continue;
-      spans.push({ start, end });
-    }
-  }
-  return mergeSpans(spans);
-}
-
-/**
- * Spans to highlight in the UI: every word-boundary occurrence of the brand or an alias.
- * Uses the same lowercase-rejection rule as the fallback so we don't highlight "notion" the word.
- * Short terms are included here (highlighting is cosmetic, not scored).
- */
-export function highlightSpans(answer: string, target: Target): { start: number; end: number }[] {
-  const folded = fold(answer);
-  const spans: { start: number; end: number }[] = [];
-  for (const term of targetTerms(target)) {
-    for (const m of folded.matchAll(termRegex(term, { global: true }))) {
-      const start = m.index!;
-      const end = start + m[0].length;
-      if (hasUpper(term) && !hasUpper(answer.slice(start, end))) continue;
-      spans.push({ start, end });
-    }
-  }
-  return mergeSpans(spans);
-}
-
-function mergeSpans(spans: { start: number; end: number }[]) {
-  const sorted = [...spans].sort((a, b) => a.start - b.start || b.end - a.end);
-  const out: { start: number; end: number }[] = [];
-  for (const s of sorted) {
-    const last = out[out.length - 1];
-    if (last && s.start <= last.end) last.end = Math.max(last.end, s.end);
-    else out.push({ ...s });
-  }
-  return out;
+  /** Sources the model cited (web track only); used by the citation report. */
+  citations?: { url: string }[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,12 +50,6 @@ function mergeSpans(spans: { start: number; end: number }[]) {
 // ---------------------------------------------------------------------------
 
 export const TARGET_KEY = "__target__";
-
-export function brandKey(name: string): string {
-  return fold(name)
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
 
 export interface Canonical {
   key: string;
@@ -385,46 +226,6 @@ export function rankAnswer(input: AnswerInput, target: Target, competitors: stri
 }
 
 // ---------------------------------------------------------------------------
-// Statistics
-// ---------------------------------------------------------------------------
-
-/** Wilson score interval for a binomial proportion (default 95%). */
-export function wilson(k: number, n: number, z = 1.959964): [number, number] | null {
-  if (n <= 0) return null;
-  const p = k / n;
-  const z2 = z * z;
-  const denom = 1 + z2 / n;
-  const center = (p + z2 / (2 * n)) / denom;
-  const half = (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / denom;
-  return [k === 0 ? 0 : Math.max(0, center - half), k === n ? 1 : Math.min(1, center + half)];
-}
-
-/** Position weight used for share of voice: 1 / log2(rank + 1). Rank 1 → 1, 2 → 0.63, 3 → 0.5. */
-export function positionWeight(rank: number): number {
-  return 1 / Math.log2(rank + 1);
-}
-
-function erf(x: number): number {
-  // Abramowitz & Stegun 7.1.26
-  const s = Math.sign(x);
-  const a = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * a);
-  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a);
-  return s * y;
-}
-const normCdf = (x: number) => 0.5 * (1 + erf(x / Math.SQRT2));
-
-/** Two-sided p-value for a difference of two proportions (pooled z-test). */
-export function twoProportionP(k1: number, n1: number, k2: number, n2: number): number | null {
-  if (n1 === 0 || n2 === 0) return null;
-  const p = (k1 + k2) / (n1 + n2);
-  const se = Math.sqrt(p * (1 - p) * (1 / n1 + 1 / n2));
-  if (se === 0) return k1 / n1 === k2 / n2 ? 1 : 0;
-  const z = (k1 / n1 - k2 / n2) / se;
-  return 2 * (1 - normCdf(Math.abs(z)));
-}
-
-// ---------------------------------------------------------------------------
 // Aggregation
 // ---------------------------------------------------------------------------
 
@@ -441,19 +242,31 @@ export interface SliceMetrics {
   sov: number | null;
 }
 
-export function sliceMetrics(scored: ScoredAnswer[]): SliceMetrics {
+/** Mention rate over the counted answers of a slice — the statistic the bootstrap resamples. */
+export const rateOf = (scored: ScoredAnswer[]): number | null => {
   const ok = scored.filter((s) => s.ok);
-  const failed = scored.length - ok.length;
-  const hits = ok.filter((s) => s.mentioned);
+  return ok.length ? ok.filter((s) => s.mentioned).length / ok.length : null;
+};
+
+/** Position-weighted share of voice over a slice. */
+export const sovOf = (scored: ScoredAnswer[]): number | null => {
   let targetW = 0;
   let totalW = 0;
-  for (const s of ok) {
+  for (const s of scored) {
+    if (!s.ok) continue;
     for (const r of s.ranked) {
       const w = positionWeight(r.rank);
       totalW += w;
       if (r.isTarget) targetW += w;
     }
   }
+  return totalW > 0 ? targetW / totalW : null;
+};
+
+export function sliceMetrics(scored: ScoredAnswer[]): SliceMetrics {
+  const ok = scored.filter((s) => s.ok);
+  const failed = scored.length - ok.length;
+  const hits = ok.filter((s) => s.mentioned);
   return {
     n: ok.length,
     failed,
@@ -461,7 +274,7 @@ export function sliceMetrics(scored: ScoredAnswer[]): SliceMetrics {
     rate: ok.length ? hits.length / ok.length : null,
     ci: wilson(hits.length, ok.length),
     avgPosition: hits.length ? hits.reduce((a, s) => a + (s.rank ?? 0), 0) / hits.length : null,
-    sov: totalW > 0 ? targetW / totalW : null,
+    sov: sovOf(ok),
   };
 }
 
@@ -533,8 +346,17 @@ export interface TrackGap {
   web: SliceMetrics;
   /** web rate − parametric rate, in proportion points. */
   delta: number | null;
+  /** Unclustered pooled z-test; kept for comparison with the clustered result. */
   pValue: number | null;
+  /** Question-clustered bootstrap of the same difference — the one to trust. */
+  bootstrap: BootstrapDiff | null;
   perModel: { model: string; parametric: SliceMetrics; web: SliceMetrics; delta: number | null }[];
+}
+
+/** Question-clustered intervals for a slice. Computed only for finished runs. */
+export interface ClusteredCI {
+  rate: BootstrapCI | null;
+  sov: BootstrapCI | null;
 }
 
 export interface Report {
@@ -547,6 +369,10 @@ export interface Report {
   leaderboard: LeaderboardEntry[];
   /** Answers where only the raw-text fallback found the brand (extraction missed it). */
   fallbackMatches: number;
+  /** Null when the run has no web-track citations (e.g. a parametric-only run). */
+  citations: CitationReport | null;
+  /** Null while a run is still in progress — resampling is skipped during polling. */
+  clustered: { overall: ClusteredCI; byTrack: Record<Track, ClusteredCI> } | null;
   scored: ScoredAnswer[];
 }
 
@@ -563,7 +389,17 @@ function groupBy<T>(xs: T[], f: (x: T) => string): Map<string, T[]> {
   return m;
 }
 
-export function computeReport(rows: AnswerInput[], target: Target, competitors: string[] = []): Report {
+export interface ReportOptions {
+  /** Run the question-clustered bootstrap (skip it while a run is still collecting). */
+  bootstrap?: boolean;
+  iterations?: number;
+  /** The target's own website, for owned-source detection in the citation report. */
+  brandDomain?: string | null;
+}
+
+const byQuestionCluster = (s: ScoredAnswer) => s.input.questionIdx;
+
+export function computeReport(rows: AnswerInput[], target: Target, competitors: string[] = [], opts: ReportOptions = {}): Report {
   const variants = variantMap(rows, target);
   const scored = rows.map((r) => rankAnswer(r, target, competitors, variants));
 
@@ -588,20 +424,38 @@ export function computeReport(rows: AnswerInput[], target: Target, competitors: 
     (m) => (byModelTrack[cellKey(m, "parametric")]?.n ?? 0) > 0 && (byModelTrack[cellKey(m, "web")]?.n ?? 0) > 0,
   );
   const paired = new Set(pairedModels);
-  const pPar = sliceMetrics(scored.filter((s) => paired.has(s.input.model) && s.input.track === "parametric"));
-  const pWeb = sliceMetrics(scored.filter((s) => paired.has(s.input.model) && s.input.track === "web"));
+  const pairedRows = scored.filter((s) => paired.has(s.input.model));
+  const pPar = sliceMetrics(pairedRows.filter((s) => s.input.track === "parametric"));
+  const pWeb = sliceMetrics(pairedRows.filter((s) => s.input.track === "web"));
+  const iterations = opts.iterations;
   const trackGap: TrackGap = {
     pairedModels,
     parametric: pPar,
     web: pWeb,
     delta: pPar.rate !== null && pWeb.rate !== null ? pWeb.rate - pPar.rate : null,
     pValue: twoProportionP(pWeb.mentions, pWeb.n, pPar.mentions, pPar.n),
+    bootstrap: opts.bootstrap
+      ? bootstrapDiff(
+          pairedRows,
+          byQuestionCluster,
+          (xs) => rateOf(xs.filter((s) => s.input.track === "web")),
+          (xs) => rateOf(xs.filter((s) => s.input.track === "parametric")),
+          { iterations },
+        )
+      : null,
     perModel: pairedModels.map((m) => {
       const par = byModelTrack[cellKey(m, "parametric")];
       const web = byModelTrack[cellKey(m, "web")];
       return { model: m, parametric: par, web, delta: par.rate !== null && web.rate !== null ? web.rate - par.rate : null };
     }),
   };
+
+  const board = leaderboard(scored, target, competitors);
+
+  const clusterFor = (xs: ScoredAnswer[]): ClusteredCI => ({
+    rate: clusterBootstrap(xs, byQuestionCluster, rateOf, { iterations }),
+    sov: clusterBootstrap(xs, byQuestionCluster, sovOf, { iterations }),
+  });
 
   return {
     overall: sliceMetrics(scored),
@@ -610,8 +464,26 @@ export function computeReport(rows: AnswerInput[], target: Target, competitors: 
     byModelTrack,
     byQuestion,
     trackGap,
-    leaderboard: leaderboard(scored, target, competitors),
+    leaderboard: board,
     fallbackMatches: scored.filter((s) => s.matchSource === "fallback").length,
+    citations: citationReport(
+      scored.map((s) => ({ ok: s.ok, track: s.input.track, mentioned: s.mentioned, citations: s.input.citations ?? null })),
+      {
+        brandDomain: opts.brandDomain,
+        targetNames: targetTerms(target),
+        explicitCompetitors: competitors,
+        competitorNames: board.filter((e) => !e.isTarget && e.mentions > 0).map((e) => e.name),
+      },
+    ),
+    clustered: opts.bootstrap
+      ? {
+          overall: clusterFor(scored),
+          byTrack: {
+            parametric: clusterFor(scored.filter((s) => s.input.track === "parametric")),
+            web: clusterFor(scored.filter((s) => s.input.track === "web")),
+          },
+        }
+      : null,
     scored,
   };
 }
@@ -619,8 +491,6 @@ export function computeReport(rows: AnswerInput[], target: Target, competitors: 
 // ---------------------------------------------------------------------------
 // Plain-language summaries
 // ---------------------------------------------------------------------------
-
-export const pct = (x: number | null | undefined, digits = 0) => (x == null ? "—" : `${(x * 100).toFixed(digits)}%`);
 
 export function verdict(report: Report, brand: string): string {
   const o = report.overall;
@@ -639,7 +509,9 @@ export function trackInsight(report: Report, brand: string): string | null {
   const g = report.trackGap;
   if (g.delta === null || !g.pairedModels.length) return null;
   const pts = Math.round(Math.abs(g.delta) * 100);
-  const sig = g.pValue !== null && g.pValue < 0.05;
+  // Prefer the question-clustered p-value; fall back to the unclustered z-test.
+  const p = g.bootstrap?.p ?? g.pValue;
+  const sig = p !== null && p < 0.05;
   const pa = g.parametric.avgPosition;
   const wa = g.web.avgPosition;
   const posShift = pa != null && wa != null && Math.abs(wa - pa) >= 0.5 ? ` When named, its average position moves from #${pa.toFixed(1)} from memory to #${wa.toFixed(1)} with web search.` : "";
@@ -647,4 +519,20 @@ export function trackInsight(report: Report, brand: string): string | null {
   const dir = g.delta > 0 ? "rises" : "falls";
   const where = g.delta > 0 ? "live web results surface it more than training data does" : "training data favors it more than current web results do";
   return `With web search on, ${brand}'s mention rate ${dir} from ${pct(g.parametric.rate)} to ${pct(g.web.rate)} (${g.delta > 0 ? "+" : "−"}${pts} pts${sig ? "" : ", not statistically significant at this sample size"}): ${where}.${posShift}`;
+}
+
+/** One line on how the brand is cited, not just named. Null when there are no citations. */
+export function citationInsight(report: Report, brand: string): string | null {
+  const c = report.citations;
+  if (!c || !c.withCitations) return null;
+  const top = c.domains.slice(0, 3).map((d) => d.domain);
+  const owned = c.citationRate ?? 0;
+  const named = c.mentionRate ?? 0;
+  const lead =
+    owned === 0
+      ? `When models search the web, they never cite ${brand}'s own site`
+      : named === 0 && c.cross.citedNotNamed > 0
+        ? `Models read ${brand}'s own site in ${c.cross.citedNotNamed} answer${c.cross.citedNotNamed === 1 ? "" : "s"} and still recommended someone else`
+        : `${brand}'s own site is cited in ${pct(owned)} of web answers, while ${brand} is named in ${pct(named)}`;
+  return `${lead}. The sources they lean on most: ${top.join(", ")}.`;
 }

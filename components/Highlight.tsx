@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { highlightSpans, type Target } from "@/lib/scoring";
+import { highlightSpans, type Target } from "@/lib/match";
 
 /** Renders text with every occurrence of the target brand/aliases marked in highlighter yellow. */
 export function HighlightedText({ text, target }: { text: string; target: Target }) {

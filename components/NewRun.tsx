@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { estimate, tracksFor, type PricedModel } from "@/lib/estimate";
-import { leaksBrand } from "@/lib/scoring";
+import { leaksBrand } from "@/lib/match";
 
 interface CatalogEntry extends PricedModel {
   label: string;
@@ -42,6 +42,7 @@ export default function NewRun() {
   const [category, setCategory] = useState("");
   const [aliases, setAliases] = useState("");
   const [competitors, setCompetitors] = useState("");
+  const [brandDomain, setBrandDomain] = useState("");
   const [count, setCount] = useState(10);
   const [questions, setQuestions] = useState<Q[] | null>(null);
   const [dropped, setDropped] = useState<{ text: string; reason: string }[]>([]);
@@ -116,6 +117,7 @@ export default function NewRun() {
           aliases: splitList(aliases),
           category,
           competitors: splitList(competitors),
+          brandDomain: brandDomain.trim() || undefined,
           questions: validQuestions,
           models: chosen.map((m) => m.id),
           samples,
@@ -158,7 +160,7 @@ export default function NewRun() {
           />
           ?
         </h1>
-        <div className="mt-8 grid gap-4 sm:grid-cols-[1fr_1fr_auto] items-end max-w-4xl">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] items-end max-w-5xl">
           <label className="block">
             <span className="label">Also counts as the brand (optional, comma-separated)</span>
             <input className="field mt-1" placeholder="e.g. Google Docs, Google Drive" value={aliases} onChange={(e) => setAliases(e.target.value)} />
@@ -166,6 +168,10 @@ export default function NewRun() {
           <label className="block">
             <span className="label">Competitors to track (optional)</span>
             <input className="field mt-1" placeholder="e.g. Evernote, Obsidian" value={competitors} onChange={(e) => setCompetitors(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="label">Your website (optional, for citation analysis)</span>
+            <input className="field mt-1" placeholder="e.g. notion.so" value={brandDomain} onChange={(e) => setBrandDomain(e.target.value)} spellCheck={false} />
           </label>
           <div className="flex items-end gap-3">
             <label className="block">

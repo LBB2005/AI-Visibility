@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS runs (
   models       TEXT NOT NULL,            -- JSON RunModel[]
   samples      INTEGER NOT NULL,
   extractor    TEXT NOT NULL,
-  est_cost     REAL
+  est_cost     REAL,
+  brand_domain TEXT                       -- the target's own website, for owned-source detection
 );
 CREATE TABLE IF NOT EXISTS answers (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,9 +57,16 @@ export function db(): Database.Database {
     d.pragma("journal_mode = WAL");
     d.pragma("foreign_keys = ON");
     d.exec(SCHEMA);
+    migrate(d);
     g.__avcDb = d;
   }
   return g.__avcDb;
+}
+
+/** Additive migrations so databases created by earlier versions keep working. */
+function migrate(d: Database.Database) {
+  const columns = (table: string) => (d.pragma(`table_info(${table})`) as { name: string }[]).map((c) => c.name);
+  if (!columns("runs").includes("brand_domain")) d.exec("ALTER TABLE runs ADD COLUMN brand_domain TEXT");
 }
 
 export interface RunModel {
@@ -88,6 +96,7 @@ export interface RunRow {
   samples: number;
   extractor: string;
   est_cost: number | null;
+  brand_domain: string | null;
 }
 
 export interface AnswerRow {

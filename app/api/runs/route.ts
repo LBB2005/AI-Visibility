@@ -5,13 +5,14 @@ import { estimate } from "@/lib/estimate";
 import { fetchCatalog, isWebNative, pickExtractor, toRunModel } from "@/lib/models";
 import { createRun, processRun } from "@/lib/pipeline";
 import { buildPayload } from "@/lib/report";
-import { leaksBrand } from "@/lib/scoring";
+import { leaksBrand } from "@/lib/match";
 
 const Body = z.object({
   brand: z.string().trim().min(1).max(100),
   aliases: z.array(z.string().trim()).default([]),
   category: z.string().trim().min(2).max(120),
   competitors: z.array(z.string().trim()).default([]),
+  brandDomain: z.string().trim().max(200).optional(),
   questions: z.array(z.object({ text: z.string().trim().min(5).max(500), intent: z.string().default("Custom") })).min(1).max(30),
   models: z.array(z.string()).min(1).max(8),
   samples: z.number().int().min(1).max(10).default(3),
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
     samples: b.samples,
     extractor: extractor.id,
     estCost: est.cost,
+    brandDomain: b.brandDomain,
   });
   void processRun(id); // background; progress is polled via GET /api/runs/[id]
   return NextResponse.json({ id });

@@ -33,6 +33,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/history" className="hover:text-ink">
               History
             </Link>
+            <Link href="/methods" className="hover:text-ink">
+              Methods
+            </Link>
             <ThemeToggle />
           </nav>
         </header>

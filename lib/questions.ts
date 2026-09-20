@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Question } from "./db";
 import { chat, parseJsonObject } from "./openrouter";
-import { leaksBrand, targetTerms, type Target } from "./scoring";
+import { leaksBrand, targetTerms, type Target } from "./match";
 
 /**
  * Question slots in priority order — a battery of N uses the first N slots, so even

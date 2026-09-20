@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { RunPayload } from "@/lib/report";
-import { pct } from "@/lib/scoring";
-import { Heatmap, Leaderboard, TrackGapChart } from "./charts";
+import { pct } from "@/lib/format";
+import { CitationSources, Heatmap, Leaderboard, TrackGapChart } from "./charts";
 import Drilldown from "./Drilldown";
 import { HighlightedText } from "./Highlight";
 
@@ -58,6 +58,7 @@ export default function RunView({ id }: { id: string }) {
   const done = progress.ok + progress.failed;
   const running = run.status === "running";
   const o = report.overall;
+  const clustered = report.clustered?.overall;
 
   return (
     <div className="pb-16">
@@ -103,15 +104,37 @@ export default function RunView({ id }: { id: string }) {
                 <HighlightedText text={p.trackInsight} target={{ brand: run.brand }} />
               </p>
             )}
+            {p.citationInsight && (
+              <p className="mt-3 max-w-3xl border-l-2 border-[var(--rule-strong)] pl-4 text-[17px] text-ink-2">
+                <HighlightedText text={p.citationInsight} target={{ brand: run.brand }} />
+              </p>
+            )}
           </>
         )}
 
         {/* Stat row */}
         {o.n > 0 && (
           <dl className="mt-10 grid grid-cols-2 md:grid-cols-4 rule-top rule-bottom">
-            <Stat label="Mention rate" value={pct(o.rate)} sub={o.ci ? `95% CI ${pct(o.ci[0])}–${pct(o.ci[1])}` : ""} first />
+            <Stat
+              label="Mention rate"
+              value={pct(o.rate)}
+              sub={o.ci ? `95% CI ${pct(o.ci[0])}–${pct(o.ci[1])}` : ""}
+              sub2={
+                clustered?.rate
+                  ? clustered.rate.degenerate
+                    ? `identical across all ${clustered.rate.clusters} questions — too few to bound`
+                    : `${pct(clustered.rate.lo)}–${pct(clustered.rate.hi)} clustered by question`
+                  : undefined
+              }
+              first
+            />
             <Stat label="Avg position when named" value={o.avgPosition ? `#${o.avgPosition.toFixed(1)}` : "—"} sub={`in ${o.mentions} answers`} />
-            <Stat label="Share of voice" value={pct(o.sov, 1)} sub="position-weighted, 1/log₂(rank+1)" />
+            <Stat
+              label="Share of voice"
+              value={pct(o.sov, 1)}
+              sub="position-weighted, 1/log₂(rank+1)"
+              sub2={clustered?.sov && !clustered.sov.degenerate ? `${pct(clustered.sov.lo, 1)}–${pct(clustered.sov.hi, 1)} clustered` : undefined}
+            />
             <Stat
               label="Answers counted"
               value={String(o.n)}
@@ -136,7 +159,10 @@ export default function RunView({ id }: { id: string }) {
                 {report.fallbackMatches} mention(s) were found by the raw-text fallback after extraction missed them.
               </span>
             )}
-            <Link href="/" className="text-sm link text-ink-2 ml-auto">
+            <Link href="/methods" className="text-sm link text-ink-2 ml-auto">
+              How these numbers are computed
+            </Link>
+            <Link href="/" className="text-sm link text-ink-2">
               New check
             </Link>
           </div>
@@ -162,6 +188,15 @@ export default function RunView({ id }: { id: string }) {
             <Leaderboard entries={report.leaderboard} n={o.n} />
           </Section>
 
+          {report.citations && (
+            <Section
+              title="Where the answers come from"
+              kicker={`The sources models cited on the web track, and whether citing each one goes with ${run.brand} being recommended.`}
+            >
+              <CitationSources report={report.citations} brand={run.brand} />
+            </Section>
+          )}
+
           {p.rows && (
             <Section title="Every answer" kicker="Full answer text for each question, model, track, and sample. Brands are ranked by their first appearance in the text.">
               <Drilldown rows={p.rows} questions={run.questions} models={run.models} byQuestion={report.byQuestion} target={target} />
@@ -173,12 +208,27 @@ export default function RunView({ id }: { id: string }) {
   );
 }
 
-function Stat({ label, value, sub, first, danger }: { label: string; value: string; sub: string; first?: boolean; danger?: boolean }) {
+function Stat({
+  label,
+  value,
+  sub,
+  sub2,
+  first,
+  danger,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  sub2?: string;
+  first?: boolean;
+  danger?: boolean;
+}) {
   return (
     <div className={`py-5 pr-4 ${first ? "" : "md:pl-6 md:border-l border-[var(--rule)]"}`}>
       <dt className="label">{label}</dt>
       <dd className="display text-[44px] leading-none mt-2">{value}</dd>
       <dd className={`text-xs mt-2 ${danger ? "text-danger" : "text-ink-3"}`}>{sub}</dd>
+      {sub2 && <dd className="text-xs mt-1 text-ink-3">{sub2}</dd>}
     </div>
   );
 }

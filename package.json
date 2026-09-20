@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gold:validate": "AVC_GOLD_REPORT=1 vitest run lib/gold.test.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

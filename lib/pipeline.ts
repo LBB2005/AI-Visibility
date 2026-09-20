@@ -22,6 +22,7 @@ export interface NewRun {
   samples: number;
   extractor: string;
   estCost: number | null;
+  brandDomain?: string | null;
 }
 
 export function createRun(input: NewRun): string {
@@ -29,8 +30,8 @@ export function createRun(input: NewRun): string {
   const d = db();
   const now = new Date().toISOString();
   const insertRun = d.prepare(
-    `INSERT INTO runs (id, created_at, status, brand, aliases, category, competitors, questions, models, samples, extractor, est_cost)
-     VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO runs (id, created_at, status, brand, aliases, category, competitors, questions, models, samples, extractor, est_cost, brand_domain)
+     VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertAnswer = d.prepare(
     `INSERT INTO answers (run_id, question_idx, question, model, track, sample, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
@@ -48,6 +49,7 @@ export function createRun(input: NewRun): string {
       input.samples,
       input.extractor,
       input.estCost,
+      input.brandDomain?.trim() || null,
     );
     input.questions.forEach((q, qi) => {
       for (const m of input.models)

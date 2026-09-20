@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { pct } from "@/lib/scoring";
+import { pct } from "@/lib/format";
 
 interface RunSummary {
   id: string;
