@@ -48,6 +48,23 @@ export default function MethodsPage() {
         </p>
       </Section>
 
+      <Section id="census" title="Two kinds of question">
+        <p>
+          <strong>Buyer questions</strong> are asked bare, with no instructions, so the model answers as it would for a real person: a shortlist of a few names.
+          That is what the headline verdict measures — unprompted recommendation.
+        </p>
+        <p>
+          <strong>List questions</strong> ask outright for a ranked list of 50. That measures recall rather than recommendation, because in a list that long nearly
+          every real brand appears, and the signal moves to how deep the brand sits and how often it reaches the top ten. They run once each instead of three times,
+          since a 50-item list barely varies between samples.
+        </p>
+        <p>
+          The two are never averaged together: 50-name answers would inflate the mention rate of the shortlist questions. List results live in their own census
+          section, which also produces the widest competitor picture in the app. Brands appearing in only one list are flagged as unverified, because past roughly
+          20 to 30 names models begin to repeat or invent.
+        </p>
+      </Section>
+
       <Section id="tracks" title="Two tracks: memory and live web">
         <p>
           Each model answers each question twice. <strong>Parametric</strong> is the plain model answering from training data. <strong>Web</strong> is the same model

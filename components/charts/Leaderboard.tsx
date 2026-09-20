@@ -10,10 +10,10 @@ import { ci } from "./shared";
 // Competitor leaderboard (Recharts horizontal bars). The target bar is highlighter yellow.
 // ---------------------------------------------------------------------------
 
-const TOP = 12;
+const TOP = 25;
 
-export function Leaderboard({ entries, n }: { entries: LeaderboardEntry[]; n: number }) {
-  const [asTable, setAsTable] = useState(false);
+export function Leaderboard({ entries, n, defaultTable = false }: { entries: LeaderboardEntry[]; n: number; defaultTable?: boolean }) {
+  const [asTable, setAsTable] = useState(defaultTable);
   const shown = entries.filter((e) => e.mentions > 0 || e.isTarget || e.isCompetitor);
   let data = shown.slice(0, TOP);
   const t = shown.find((e) => e.isTarget);

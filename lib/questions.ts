@@ -20,6 +20,42 @@ export const SLOTS: { intent: string; guide: string }[] = [
   { intent: "Use case", guide: "has a different specific use case or persona than any other question" },
 ];
 
+/**
+ * How many names the list questions ask for. Models rarely reach it — the shortfall is
+ * reported rather than hidden, and names that appear in only one answer across the whole
+ * run are flagged as unverified.
+ */
+export const LIST_TARGET = 50;
+
+/**
+ * Long-list questions are templated, not generated: they're formulaic by nature, they
+ * can't leak a brand the way a generated question can, and keeping them fixed makes runs
+ * comparable. They ask a different thing from the buyer battery — recall rather than
+ * recommendation — so their results are reported separately.
+ */
+export function listQuestions(category: string): Question[] {
+  return [
+    {
+      text: `Give me a ranked list of ${LIST_TARGET} ${category}, best first. Just the names, numbered.`,
+      intent: `Ranked ${LIST_TARGET}`,
+      kind: "list",
+      samples: 1,
+    },
+    {
+      text: `I'm building a shortlist for my team and want to see the whole market. Name ${LIST_TARGET} ${category}, ranked from most to least worth considering.`,
+      intent: `Whole market`,
+      kind: "list",
+      samples: 1,
+    },
+    {
+      text: `List ${LIST_TARGET} ${category} ranked by how often you'd recommend them, and include lesser-known options, not just the obvious ones.`,
+      intent: `Long tail`,
+      kind: "list",
+      samples: 1,
+    },
+  ];
+}
+
 const Out = z.object({ questions: z.array(z.object({ slot: z.number().int(), text: z.string().min(8) })) });
 
 function prompt(category: string, slots: { n: number; intent: string; guide: string }[], avoid: string[]) {
@@ -85,6 +121,14 @@ export async function generateQuestions(opts: { category: string; target: Target
     }
   }
 
-  const questions = slots.filter((s) => accepted.has(s.n)).map((s) => accepted.get(s.n)!);
-  return { questions, dropped };
+  const questions: Question[] = slots.filter((s) => accepted.has(s.n)).map((s) => ({ ...accepted.get(s.n)!, kind: "buyer" as const }));
+
+  // The list questions go through the same leak check — a category can contain the brand.
+  const list = listQuestions(opts.category).filter((q) => {
+    const leak = leaksBrand(q.text, opts.target);
+    if (leak) dropped.push({ text: q.text, reason: `names "${leak}"` });
+    return !leak;
+  });
+
+  return { questions: [...questions, ...list], dropped };
 }

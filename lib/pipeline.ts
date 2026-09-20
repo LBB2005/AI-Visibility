@@ -52,9 +52,10 @@ export function createRun(input: NewRun): string {
       input.brandDomain?.trim() || null,
     );
     input.questions.forEach((q, qi) => {
+      const samples = Math.max(1, q.samples ?? input.samples);
       for (const m of input.models)
         for (const track of tracksFor(m))
-          for (let s = 1; s <= input.samples; s++) insertAnswer.run(id, qi, q.text, m.id, track, s, now);
+          for (let s = 1; s <= samples; s++) insertAnswer.run(id, qi, q.text, m.id, track, s, now);
     });
   })();
   return id;

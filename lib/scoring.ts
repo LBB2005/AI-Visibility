@@ -43,6 +43,8 @@ export interface AnswerInput {
   brands: ExtractedBrand[] | null;
   /** Sources the model cited (web track only); used by the citation report. */
   citations?: { url: string }[] | null;
+  /** "buyer" (natural shortlist) or "list" (an explicit long ranked list). Defaults to buyer. */
+  kind?: "buyer" | "list";
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +355,28 @@ export interface TrackGap {
   perModel: { model: string; parametric: SliceMetrics; web: SliceMetrics; delta: number | null }[];
 }
 
+/**
+ * What the long-list questions measure: not whether the brand is recommended (in a list of
+ * 50 nearly every real brand appears) but how deep in the list it lands, and what the full
+ * brand universe of the category looks like.
+ */
+export interface CensusReport {
+  /** Counted answers to long-list questions. */
+  answers: number;
+  askedFor: number;
+  listedRate: number | null;
+  avgPosition: number | null;
+  /** Share of list answers where the brand lands in the first ten names. */
+  top10Rate: number | null;
+  /** How many names models actually produced, against how many were asked for. */
+  avgListLength: number | null;
+  medianListLength: number | null;
+  brands: LeaderboardEntry[];
+  /** Brands named in exactly one list answer — either very niche or invented. */
+  unverified: number;
+  unverifiedNames: string[];
+}
+
 /** Question-clustered intervals for a slice. Computed only for finished runs. */
 export interface ClusteredCI {
   rate: BootstrapCI | null;
@@ -371,6 +395,8 @@ export interface Report {
   fallbackMatches: number;
   /** Null when the run has no web-track citations (e.g. a parametric-only run). */
   citations: CitationReport | null;
+  /** Null unless the battery included long-list questions. */
+  census: CensusReport | null;
   /** Null while a run is still in progress — resampling is skipped during polling. */
   clustered: { overall: ClusteredCI; byTrack: Record<Track, ClusteredCI> } | null;
   scored: ScoredAnswer[];
@@ -395,13 +421,53 @@ export interface ReportOptions {
   iterations?: number;
   /** The target's own website, for owned-source detection in the citation report. */
   brandDomain?: string | null;
+  /** How many names the long-list questions asked for. */
+  listTarget?: number;
+}
+
+const median = (xs: number[]): number | null => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/** Metrics for the long-list questions, kept apart from the buyer-question headline. */
+export function censusReport(listRows: ScoredAnswer[], target: Target, competitors: string[], askedFor: number): CensusReport | null {
+  const ok = listRows.filter((s) => s.ok);
+  if (!ok.length) return null;
+  const named = ok.filter((s) => s.mentioned);
+  const lengths = ok.map((s) => s.ranked.length);
+  const board = leaderboard(ok, target, competitors);
+  const singles = board.filter((e) => e.mentions === 1 && !e.isTarget && !e.isCompetitor);
+  return {
+    answers: ok.length,
+    askedFor,
+    listedRate: named.length / ok.length,
+    avgPosition: named.length ? named.reduce((a, s) => a + (s.rank ?? 0), 0) / named.length : null,
+    top10Rate: ok.filter((s) => (s.rank ?? Infinity) <= 10).length / ok.length,
+    avgListLength: lengths.reduce((a, b) => a + b, 0) / lengths.length,
+    medianListLength: median(lengths),
+    brands: board,
+    unverified: singles.length,
+    unverifiedNames: singles.slice(0, 12).map((e) => e.name),
+  };
 }
 
 const byQuestionCluster = (s: ScoredAnswer) => s.input.questionIdx;
 
 export function computeReport(rows: AnswerInput[], target: Target, competitors: string[] = [], opts: ReportOptions = {}): Report {
+  // Variant folding sees every answer — more data makes the name map better.
   const variants = variantMap(rows, target);
-  const scored = rows.map((r) => rankAnswer(r, target, competitors, variants));
+  const all = rows.map((r) => rankAnswer(r, target, competitors, variants));
+
+  // Long-list answers name ~50 brands each, so mixing them into the headline would
+  // inflate the mention rate. Headline metrics use the buyer questions; the list
+  // questions get their own census section.
+  const listRows = all.filter((s) => s.input.kind === "list");
+  const buyerRows = all.filter((s) => s.input.kind !== "list");
+  // A battery of nothing but list questions still needs a headline, so fall back to them.
+  const scored = buyerRows.length ? buyerRows : all;
 
   const byModel: Record<string, SliceMetrics> = {};
   for (const [m, xs] of groupBy(scored, (s) => s.input.model)) byModel[m] = sliceMetrics(xs);
@@ -466,6 +532,7 @@ export function computeReport(rows: AnswerInput[], target: Target, competitors: 
     trackGap,
     leaderboard: board,
     fallbackMatches: scored.filter((s) => s.matchSource === "fallback").length,
+    census: censusReport(listRows, target, competitors, opts.listTarget ?? 50),
     citations: citationReport(
       scored.map((s) => ({ ok: s.ok, track: s.input.track, mentioned: s.mentioned, citations: s.input.citations ?? null })),
       {
@@ -484,7 +551,8 @@ export function computeReport(rows: AnswerInput[], target: Target, competitors: 
           },
         }
       : null,
-    scored,
+    // Every row, in input order, so callers can pair scores back to their source rows.
+    scored: all,
   };
 }
 

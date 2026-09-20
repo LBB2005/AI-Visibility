@@ -168,6 +168,55 @@ describe("computeReport", () => {
     expect(boot.trackGap.bootstrap!.p).toBeLessThan(0.05);
   });
 
+  it("keeps long-list answers out of the headline and reports them as a census", () => {
+    const buyer = [
+      row("Obsidian is best.", ["Obsidian"], { questionIdx: 0 }),
+      row("Obsidian again.", ["Obsidian"], { questionIdx: 1, sample: 2 }),
+    ];
+    // A 12-name list that includes the target at rank 11 — named, but deep.
+    const names = ["Obsidian", "OneNote", "Evernote", "Bear", "Joplin", "Craft", "Logseq", "Roam", "Agenda", "Drafts", "Notion", "Supernote"];
+    const list = [
+      row(names.join(", "), names, { questionIdx: 2, kind: "list" }),
+      row(names.join(", "), names, { questionIdx: 3, kind: "list", sample: 1 }),
+    ];
+    const rep = computeReport([...buyer, ...list], notion, []);
+
+    // Headline ignores the list answers entirely: the brand is named in neither buyer answer.
+    expect(rep.overall).toMatchObject({ n: 2, mentions: 0, rate: 0 });
+
+    const c = rep.census!;
+    expect(c.answers).toBe(2);
+    expect(c.listedRate).toBe(1);
+    expect(c.avgPosition).toBe(11);
+    expect(c.top10Rate).toBe(0); // named, but never in the first ten
+    expect(c.avgListLength).toBe(12);
+    expect(c.brands.length).toBeGreaterThan(10);
+    expect(rep.overall.n + c.answers).toBe(4);
+  });
+
+  it("returns a score for every input row, in order, so callers can pair them back", () => {
+    const mixed = [row("Notion.", ["Notion"], { questionIdx: 0 }), row("A, B.", ["A", "B"], { questionIdx: 1, kind: "list" })];
+    const r = computeReport(mixed, notion, []);
+    expect(r.scored).toHaveLength(mixed.length);
+    expect(r.scored.map((s) => s.input.kind ?? "buyer")).toEqual(["buyer", "list"]);
+  });
+
+  it("flags brands that appear in only one long list as unverified", () => {
+    const common = ["Obsidian", "OneNote"];
+    const rep = computeReport(
+      [
+        row("Obsidian, OneNote, Zzyzx Notes", [...common, "Zzyzx Notes"], { questionIdx: 0, kind: "list" }),
+        row("Obsidian, OneNote", common, { questionIdx: 1, kind: "list" }),
+      ],
+      notion,
+      [],
+    );
+    expect(rep.census!.unverifiedNames).toEqual(["Zzyzx Notes"]);
+    expect(rep.census!.unverified).toBe(1);
+    // With no buyer questions at all, the headline falls back to every answer.
+    expect(rep.overall.n).toBe(2);
+  });
+
   it("attaches a citation report when web answers carry citations", () => {
     const withCites: AnswerInput[] = [
       row("Notion is great", ["Notion"], { track: "web", citations: [{ url: "https://reddit.com/r/x" }, { url: "https://notion.so/a" }] }),

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { RunPayload } from "@/lib/report";
 import { pct } from "@/lib/format";
-import { CitationSources, Heatmap, Leaderboard, TrackGapChart } from "./charts";
+import { Census, CitationSources, Heatmap, Leaderboard, TrackGapChart } from "./charts";
 import Drilldown from "./Drilldown";
 import { HighlightedText } from "./Highlight";
 
@@ -136,7 +136,7 @@ export default function RunView({ id }: { id: string }) {
               sub2={clustered?.sov && !clustered.sov.degenerate ? `${pct(clustered.sov.lo, 1)}–${pct(clustered.sov.hi, 1)} clustered` : undefined}
             />
             <Stat
-              label="Answers counted"
+              label={report.census ? "Buyer answers counted" : "Answers counted"}
               value={String(o.n)}
               sub={progress.failed ? `${progress.failed} failed calls excluded` : "no failed calls"}
               danger={progress.failed > 0}
@@ -187,6 +187,15 @@ export default function RunView({ id }: { id: string }) {
           <Section title="Who gets recommended" kicker={`Every brand named across ${o.n} answers, ranked by mention rate. ${run.brand} is highlighted.`}>
             <Leaderboard entries={report.leaderboard} n={o.n} />
           </Section>
+
+          {report.census && (
+            <Section
+              title={`When models name ${report.census.askedFor}`}
+              kicker={`The long-list questions ask for ${report.census.askedFor} ${run.category} outright. That measures recall and rank depth rather than recommendation — in a list that long almost every real brand gets named — so these numbers are kept apart from the headline above.`}
+            >
+              <Census census={report.census} brand={run.brand} />
+            </Section>
+          )}
 
           {report.citations && (
             <Section

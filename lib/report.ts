@@ -41,17 +41,20 @@ export interface RunPayload {
   rows?: RowDTO[];
 }
 
-const toInput = (a: AnswerRow): AnswerInput => ({
-  questionIdx: a.question_idx,
-  question: a.question,
-  model: a.model,
-  track: a.track,
-  sample: a.sample,
-  status: a.status === "ok" ? "ok" : "failed",
-  answer: a.answer,
-  brands: a.brands,
-  citations: a.citations,
-});
+const toInput =
+  (run: RunRow) =>
+  (a: AnswerRow): AnswerInput => ({
+    questionIdx: a.question_idx,
+    question: a.question,
+    model: a.model,
+    track: a.track,
+    sample: a.sample,
+    status: a.status === "ok" ? "ok" : "failed",
+    answer: a.answer,
+    brands: a.brands,
+    citations: a.citations,
+    kind: run.questions[a.question_idx]?.kind ?? "buyer",
+  });
 
 export function buildPayload(id: string, withRows: boolean): RunPayload | null {
   let run = getRun(id);
@@ -67,7 +70,7 @@ export function buildPayload(id: string, withRows: boolean): RunPayload | null {
   const finished = answers.filter((a) => a.status !== "pending");
   // Resampling is skipped while a run is still collecting — the progress poll runs every 2s.
   const settled = run.status !== "running" && !isActive(id);
-  const { scored, ...report } = computeReport(finished.map(toInput), target, run.competitors, {
+  const { scored, ...report } = computeReport(finished.map(toInput(run)), target, run.competitors, {
     bootstrap: settled,
     brandDomain: run.brand_domain,
   });

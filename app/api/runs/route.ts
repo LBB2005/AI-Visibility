@@ -13,7 +13,17 @@ const Body = z.object({
   category: z.string().trim().min(2).max(120),
   competitors: z.array(z.string().trim()).default([]),
   brandDomain: z.string().trim().max(200).optional(),
-  questions: z.array(z.object({ text: z.string().trim().min(5).max(500), intent: z.string().default("Custom") })).min(1).max(30),
+  questions: z
+    .array(
+      z.object({
+        text: z.string().trim().min(5).max(500),
+        intent: z.string().default("Custom"),
+        kind: z.enum(["buyer", "list"]).default("buyer"),
+        samples: z.number().int().min(1).max(10).optional(),
+      }),
+    )
+    .min(1)
+    .max(30),
   models: z.array(z.string()).min(1).max(8),
   samples: z.number().int().min(1).max(10).default(3),
 });
@@ -64,7 +74,7 @@ export async function POST(req: Request) {
   if (!extractor) return NextResponse.json({ error: "No extraction model available." }, { status: 502 });
 
   const est = estimate({
-    questions: b.questions.length,
+    questions: b.questions,
     samples: b.samples,
     models: chosen.map((m) => ({ ...m, webNative: isWebNative(m.id) })),
     extractor: { ...extractor, webNative: false },

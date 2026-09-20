@@ -19,6 +19,8 @@ interface ModelsResponse {
 interface Q {
   text: string;
   intent: string;
+  kind?: "buyer" | "list";
+  samples?: number;
 }
 
 const PROVIDERS = [
@@ -75,10 +77,10 @@ export default function NewRun() {
     [slots, catalog],
   );
   const leaks = useMemo(() => (questions ?? []).map((q) => (target.brand ? leaksBrand(q.text, target) : null)), [questions, target]);
-  const validQuestions = (questions ?? []).filter((q, i) => q.text.trim().length >= 5 && !leaks[i]);
+  const validQuestions = useMemo(() => (questions ?? []).filter((q, i) => q.text.trim().length >= 5 && !leaks[i]), [questions, leaks]);
   const est = useMemo(
-    () => estimate({ questions: validQuestions.length, samples, models: chosen, extractor: catalog?.extractor ?? null }),
-    [validQuestions.length, samples, chosen, catalog],
+    () => estimate({ questions: validQuestions, samples, models: chosen, extractor: catalog?.extractor ?? null }),
+    [validQuestions, samples, chosen, catalog],
   );
   const minutes = Math.max(1, Math.round((est.answerCalls * 14 + est.extractCalls * 3) / 4 / 60));
 
@@ -204,8 +206,8 @@ export default function NewRun() {
           <div>
             <h2 className="section-title">The questions</h2>
             <p className="section-kicker mt-1">
-              Vendor-neutral buyer questions. None may name <span className="hl">{brand}</span> or its aliases. The generator never saw the brand, and every question is
-              checked in code. Edit freely.
+              Vendor-neutral buyer questions, plus a few that ask outright for a long ranked list. None may name <span className="hl">{brand}</span> or its aliases:
+              the generator never saw the brand, and every question is checked in code. Edit freely.
             </p>
             <ol className="mt-5 space-y-2">
               {questions.map((q, i) => (
@@ -219,8 +221,9 @@ export default function NewRun() {
                       value={q.text}
                       onChange={(e) => update(i, e.target.value)}
                     />
-                    <div className="mt-1 flex gap-2 text-xs text-ink-3">
+                    <div className="mt-1 flex gap-2 text-xs text-ink-3 items-center">
                       <span>{q.intent}</span>
+                      {q.kind === "list" && <span className="chip">asks for a ranked list · 1 sample</span>}
                       {leaks[i] && <span className="text-danger">Names “{leaks[i]}”. This question will be excluded.</span>}
                     </div>
                   </div>
@@ -291,7 +294,7 @@ export default function NewRun() {
 
             <div className="mt-5 flex items-center gap-3">
               <label className="label" htmlFor="samples">
-                Samples per question × model × track
+                Samples per buyer question × model × track
               </label>
               <select id="samples" className="field w-20" value={samples} onChange={(e) => setSamples(Number(e.target.value))}>
                 {[1, 2, 3, 5].map((n) => (
@@ -302,9 +305,10 @@ export default function NewRun() {
 
             <div className="mt-6 rule-top pt-5">
               <p className="text-sm text-ink-2">
-                <span className="num text-ink">{est.answerCalls}</span> answers ({validQuestions.length} questions ×{" "}
-                {chosen.reduce((a, m) => a + tracksFor(m).length, 0)} model-tracks × {samples}) plus <span className="num text-ink">{est.extractCalls}</span>{" "}
-                extraction calls
+                <span className="num text-ink">{est.answerCalls}</span> answers across {validQuestions.filter((q) => q.kind !== "list").length} buyer questions ×{" "}
+                {samples} sample{samples > 1 ? "s" : ""}
+                {validQuestions.some((q) => q.kind === "list") && <> and {validQuestions.filter((q) => q.kind === "list").length} list questions × 1</>}, on{" "}
+                {chosen.reduce((a, m) => a + tracksFor(m).length, 0)} model-tracks, plus <span className="num text-ink">{est.extractCalls}</span> extraction calls
               </p>
               <p className="mt-2 flex items-baseline gap-3">
                 <span className="display text-[44px] whitespace-nowrap">≈ {money(est.cost)}</span>

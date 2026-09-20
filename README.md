@@ -51,9 +51,15 @@ The point is to measure **unprompted recommendation**: does the model bring up t
 
 ### The question battery
 
+The battery mixes two kinds of question, and their results are reported separately because they measure different things.
+
 Up to 10 questions, filled in priority order so that small batteries still cover the core intents: best overall, small team, alternatives to the market leader, enterprise, budget/value, shortlist/comparison, beginner, specific use case, a second best-overall phrasing ("what do most people use?"), and a second use case.
 
 The *alternatives* question names the category leader ("I'm leaving Evernote…"). A brand named in the question is the **premise, not a recommendation**, so it's excluded from that answer's ranking (see Matching).
+
+**Buyer questions** (10) are asked bare, with no instructions, so models answer as they would for a real person — typically a shortlist of 3–8 names. This is what the headline verdict measures: *unprompted recommendation*.
+
+**List questions** (3) ask outright for a ranked list of 50 ("Give me a ranked list of 50 note-taking apps, best first"). Asking for a long list measures something different — *recall*, not recommendation — because in a list of 50 nearly every real brand gets named. They run once each rather than three times, since a 50-item list barely varies between samples, and they're templated rather than generated so runs stay comparable. Their results live in a separate **category census** section and are never averaged into the headline: mixing 50-name answers with 5-name answers would inflate the mention rate.
 
 ### Tracks
 
@@ -116,6 +122,19 @@ Failed calls are excluded from every denominator, and the number of exclusions i
 Every metric is broken down **by model**, **by track**, and **by model × track** (the heatmap), and by question in the drilldown.
 
 **The memory vs. web gap** is computed only over models that ran *both* tracks, so web-only Perplexity can't skew it. It's reported per model and pooled, with a question-clustered bootstrap p-value; the naive z-test that ignores clustering is shown beside it for comparison. If the gap isn't significant at this sample size, the app says so rather than implying a finding. A large positive gap means current web content surfaces the brand more than training data does, which is a signal that recent content and PR are working. A negative gap means the brand's visibility is mostly historical.
+
+### The category census
+
+For the list questions the interesting numbers are different:
+
+| Metric | What it tells you |
+|---|---|
+| **Named at all** | Near 100% for any established brand — a 0% here is a genuinely damning result |
+| **Average rank in the list** | Where you sit when everyone is named. This is the real signal |
+| **Reaches the top 10** | How often you're in the first ten names, which is closer to what a buyer actually reads |
+| **Names produced** | How many of the 50 asked for the model actually returned. The shortfall is reported, not padded |
+
+Long lists also produce the widest competitor picture in the app — a typical run turns up 3–4× more distinct brands than the buyer questions do. **Brands that appear in only one list are flagged as unverified**: past roughly 20–30 names models start reaching, and a single-appearance name is either genuinely niche or invented.
 
 ### Named vs. cited
 
@@ -189,6 +208,7 @@ lib/
 - **Common-word brands.** A capitalized sentence-initial word ("Bear in mind…") can still pass the fallback when extraction misses the brand. Brands of 2 or fewer characters rely on extraction alone.
 - **Name roll-ups are heuristic.** Folding "Microsoft OneNote" into "OneNote" is usually right. It can over-merge when a bare company name ("Google") is also extracted.
 - **Snapshot in time.** Model versions and web indexes change. Default models are re-picked from the live catalog, so reruns weeks apart may use different models; the model id is stored on each run.
+- **Long lists strain the models.** Past 20–30 names, models repeat, drift off-category, or invent plausible-sounding products. Single-appearance names are flagged, but the flag is a heuristic, not verification.
 - **Source buckets are heuristic.** Community, review, press and reference sites come from curated lists, so the long tail lands in "other". Only *your site* and *competitor* are derived from the run's own brands, and only those feed a headline number.
 - **Source lift is observational.** It cannot separate "this source made models recommend you" from "this source already recommends you".
 - **Cost is estimated.** The pre-run figure uses average token counts. Actual per-row cost comes from OpenRouter usage accounting and is shown during the run.

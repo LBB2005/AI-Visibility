@@ -77,9 +77,15 @@ export interface RunModel {
   webNative: boolean;
 }
 
+export type QuestionKind = "buyer" | "list";
+
 export interface Question {
   text: string;
   intent: string;
+  /** "buyer" asks naturally and gets a shortlist; "list" asks for a long ranked list. */
+  kind?: QuestionKind;
+  /** Overrides the run's sample count (long lists barely vary, so they run once). */
+  samples?: number;
 }
 
 export interface RunRow {
